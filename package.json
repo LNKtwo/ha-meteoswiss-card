@@ -1,6 +1,6 @@
 {
   "name": "meteoswiss-weather-card",
-  "version": "2.4.7",
+  "version": "2.4.8",
   "description": "Swiss weather dashboard card for Home Assistant — optimized for MeteoSwiss data via LNKtwo/ha-meteoswiss",
   "type": "module",
   "scripts": {

@@ -466,7 +466,7 @@ function renderMeteoSwissWarnings(
         const icon = typeIcons[warnType] || 'mdi:alert';
 
         // Determine language from HA
-        const haLang = (typeof hass !== 'undefined' && hass?.language) || 'en';
+        const haLang = hass?.selectedLanguage || hass?.language || 'en';
         const isDe = haLang.startsWith('de');
         const typeNames = isDe ? typeNameDe : typeNameEn;
 

@@ -4735,7 +4735,7 @@ function ol(r, e, t, i) {
   return c`
     <div style="margin: 10px 16px;">
       ${o.map((f, b) => {
-    const C = `ms_alert_${b}`, v = f.warn_level || f.level || 3, E = l[v] || l[3], D = f.warn_type || 0, P = a[D] || "mdi:alert", W = (typeof i < "u" && i?.language || "en").startsWith("de"), x = (W ? h : d)[D] || f.warn_type_name || "", M = W ? p[v] || f.warn_level_name || "" : f.warn_level_name || "", O = `${D}_${v}`, $ = W && g[O] || "", F = f.description || "", R = $ || F, K = !!e[C], te = f.valid_from || f.start, ie = f.valid_to && f.valid_to !== "None" ? f.valid_to : f.end || null;
+    const C = `ms_alert_${b}`, v = f.warn_level || f.level || 3, E = l[v] || l[3], D = f.warn_type || 0, P = a[D] || "mdi:alert", W = (i?.selectedLanguage || i?.language || "en").startsWith("de"), x = (W ? h : d)[D] || f.warn_type_name || "", M = W ? p[v] || f.warn_level_name || "" : f.warn_level_name || "", O = `${D}_${v}`, $ = W && g[O] || "", F = f.description || "", R = $ || F, K = !!e[C], te = f.valid_from || f.start, ie = f.valid_to && f.valid_to !== "None" ? f.valid_to : f.end || null;
     return c`
           <div style="
             display: flex; align-items: flex-start; gap: 10px;
@@ -9358,7 +9358,8 @@ let Nt = class extends N {
       t,
       i,
       this._openWarnings,
-      this._toggle
+      this._toggle,
+      this.hass
     );
     return s || c`<div class="no-warnings">${u("warning.warnings_none")}</div>`;
   }
