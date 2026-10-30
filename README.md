@@ -10,6 +10,8 @@
 
 Companion integration: **[ha-meteoswiss](https://github.com/LNKtwo/ha-meteoswiss)** — SwissMetNet data, warnings, pollen, heating degree days, Foehn index, UV index, air quality, and more.
 
+![Illustrative warning display using synthetic inputs](docs/images/warning-display.svg)
+
 ---
 
 ## ✨ Features
@@ -26,6 +28,7 @@ Companion integration: **[ha-meteoswiss](https://github.com/LNKtwo/ha-meteoswiss
 - Auto-detected from ha-meteoswiss — zero config
 - Expandable details with validity period, description, and links
 - Level 3+ warnings get pulsing animation
+- Source-aware labels, original warning text and explicit data availability — [display contract](docs/WARNING_DISPLAY.md)
 
 ### 🌡️ Current Conditions (iOS Style)
 - Large temperature display with weather icon
@@ -201,10 +204,12 @@ Full visual editor included — no YAML needed. Edit dashboard → Add Card → 
 ```bash
 git clone https://github.com/LNKtwo/ha-meteoswiss-card.git
 cd ha-meteoswiss-card
-npm install --legacy-peer-deps
+npm ci --ignore-scripts
 npm run dev          # Dev with watch mode
 npm run build        # Production build
 npm run type-check   # TypeScript check
+npm test             # Warning rendering regression tests
+npm run test:coverage # Coverage gate for the new warning-label module
 ```
 
 **Tech Stack:** Lit 3 · TypeScript · Vite · lit-translate · Meteocons

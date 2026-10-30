@@ -1,6 +1,7 @@
 import { html, TemplateResult } from 'lit';
 import { get as _t } from 'lit-translate';
 import { marked } from 'marked';
+import { warningDate, warningPresentation } from './warning-labels';
 
 function sanitizeHtml(dirty: string): string {
   const template = document.createElement('template');
@@ -327,6 +328,16 @@ export function renderLegacyWarnings(
   `;
 }
 
+export function renderWarningsUnavailable(): TemplateResult {
+  return html`<div class="no-warnings" role="status">${_t('warning.warnings_unavailable')}</div>`;
+}
+
+function warningUnavailable(entity: HassEntity): boolean {
+  return entity.state === 'unavailable' || entity.state === 'unknown'
+    || entity.attributes?.data_status === 'unavailable'
+    || entity.attributes?.data_status === 'unknown';
+}
+
 export function renderWarningSection(
   warningEntity: HassEntity | null | undefined,
   primaryEntity: HassEntity | null | undefined,
@@ -336,6 +347,8 @@ export function renderWarningSection(
   toggle: (id: string) => void,
   hass?: any
 ): TemplateResult | null {
+  // Check availability before attributes: HA can retain last-good warnings.
+  if (primaryEntity && warningUnavailable(primaryEntity)) return renderWarningsUnavailable();
   // 1. Ranked model (primary/secondary/tertiary entities)
   if (primaryEntity && primaryEntity.attributes?.has_warning !== undefined) {
     return renderRankedWarnings(
@@ -346,12 +359,13 @@ export function renderWarningSection(
       toggle
     );
   }
+  if (warningEntity && warningUnavailable(warningEntity)) return renderWarningsUnavailable();
   // 2. Legacy model (single warning entity with warning_levels)
   if (warningEntity && warningEntity.attributes?.warning_levels) {
     return renderLegacyWarnings(warningEntity, openWarnings, toggle);
   }
   // 3. LNKtwo/ha-meteoswiss model
-  if (warningEntity && (warningEntity.state === 'on' || warningEntity.attributes?.alerts)) {
+  if (warningEntity && (warningEntity.state === 'on' || warningEntity.attributes?.alerts !== undefined)) {
     return renderMeteoSwissWarnings(warningEntity, openWarnings, toggle, hass);
   }
   return null;
@@ -370,121 +384,47 @@ function renderMeteoSwissWarnings(
   hass?: any
 ): TemplateResult | null {
   const attrs = warningEntity.attributes as Record<string, any>;
-  const rawAlerts: any[] = attrs.alerts || [];
-
-  // Filter out outlooks — only show active alerts
+  const rawAlerts: unknown = attrs.alerts ?? [];
+  if (!Array.isArray(rawAlerts)
+    || rawAlerts.some(a => !a || typeof a !== 'object' || Array.isArray(a))) {
+    return renderWarningsUnavailable();
+  }
+  // The integration owns active/upcoming timing. A valid off state must not
+  // become an active warning merely because an empty alerts array is truthy.
+  if (warningEntity.state === 'off') return null;
   const alerts = rawAlerts.filter(a => !a.outlook);
-
-  // If no structured alerts but entity is 'on', show generic warning
   if (alerts.length === 0) {
-    const count = attrs.active_alerts_count || 0;
-    const color = '#f6c90e';
+    if (rawAlerts.length > 0) return null; // Outlooks are not active warnings.
+    if (warningEntity.state !== 'on') return renderWarningsUnavailable();
+    // Older integrations can signal an active warning without details.
+    const count = typeof attrs.active_alerts_count === 'number'
+      && Number.isInteger(attrs.active_alerts_count) && attrs.active_alerts_count > 0
+      ? attrs.active_alerts_count : 0;
     return html`
       <div class="ms-section" style="margin: 10px 16px;">
-        <div style="display:flex;align-items:center;gap:8px;padding:12px;border-radius:10px;background:${color}15;">
-          <ha-icon icon="mdi:alert" style="color:${color};flex-shrink:0;"></ha-icon>
+        <div style="display:flex;align-items:center;gap:8px;padding:12px;border-radius:10px;background:#f6c90e15;">
+          <ha-icon icon="mdi:alert" style="color:#f6c90e;flex-shrink:0;"></ha-icon>
           <div style="flex:1;font-size:13px;">${_t('warning.weather_warning')}${count > 0 ? ` (${count})` : ''}</div>
         </div>
       </div>
     `;
   }
 
-  // Map LNKtwo warn_level (1-5) to colors
   const levelColors: Record<number, string> = {
-    1: '#4CAF50',  // No/minor danger — green
-    2: '#f6c90e',  // Moderate — yellow
-    3: '#FF9800',  // Significant — orange
-    4: '#f44336',  // High — red
-    5: '#9C27B0',  // Very high — violet
+    1: '#4CAF50', 2: '#f6c90e', 3: '#FF9800', 4: '#f44336', 5: '#9C27B0',
   };
-
-  // Map warn_type (int) to icons — based on MeteoSwiss warn types
-  const typeIcons: Record<number, string> = {
-    1: 'mdi:weather-lightning-rainy',   // Thunderstorm
-    2: 'mdi:weather-pouring',            // Rain
-    3: 'mdi:snowflake',                  // Snow/Snowfall
-    4: 'mdi:weather-windy',              // Wind
-    5: 'mdi:weather-fog',                // Fog
-    6: 'mdi:snowflake-alert',            // Black ice / Slippery roads
-    7: 'mdi:weather-sunny-alert',        // Heat
-    8: 'mdi:snowflake-thermometer',      // Frost
-    9: 'mdi:thermometer-lines',          // Cold/Snow drift
-    10: 'mdi:fire-alert',                // Forest fire
-    11: 'mdi:waves-arrow-up',            // Flood
-    12: 'mdi:snowflake-alert',           // Avalanche
-    13: 'mdi:car-tire-alert',            // Slippery roads
-  };
-
-  // Warn type names — DE/EN (overrides API's English/Unknown labels)
-  const typeNameDe: Record<number, string> = {
-    1: 'Gewitter', 2: 'Regen', 3: 'Schnee', 4: 'Wind', 5: 'Nebel',
-    6: 'Glätte', 7: 'Hitze', 8: 'Frost', 9: 'Kälte',
-    10: 'Waldbrand', 11: 'Hochwasser', 12: 'Lawine', 13: 'Strassenverhältnisse',
-  };
-  const typeNameEn: Record<number, string> = {
-    1: 'Thunderstorm', 2: 'Rain', 3: 'Snow', 4: 'Wind', 5: 'Fog',
-    6: 'Black Ice', 7: 'Heat', 8: 'Frost', 9: 'Cold',
-    10: 'Forest Fire', 11: 'Flood', 12: 'Avalanche', 13: 'Road Conditions',
-  };
-
-  // Level names — DE/EN
-  const levelNameDe: Record<number, string> = {
-    1: 'Keine oder geringe Gefahr', 2: 'Mässige Gefahr',
-    3: 'Markante Gefahr', 4: 'Grosse Gefahr', 5: 'Sehr grosse Gefahr',
-  };
-
-  // Detailed descriptions by warn_type + level (DE)
-  const descriptionsDe: Record<string, string> = {
-    '10_4': 'Grosse Waldbrandgefahr. Offenes Feuer streng verboten. Die Kantone haben Massnahmen ergriffen. Weitere Infos beim BAFU.',
-    '10_3': 'Markante Waldbrandgefahr. Vorsicht bei offenen Feuerstellen. Waldbetretungsverbote möglich.',
-    '10_2': 'Erhöhte Waldbrandgefahr. Vorsicht mit Feuer im Freien.',
-    '7_3': 'Hitzebelastung: Signifikantes Risiko für Kreislaufprobleme und körperliches Unbehagen. Mindestens 1,5 Liter pro Tag trinken. Körperliche Anstrengung zur heissesten Tageszeit vermeiden. Empfehlungen des BAG beachten.',
-    '7_4': 'Grosse Hitzebelastung: Hohes Risiko für Kreislaufprobleme. Ausreichend trinken, körperliche Anstrengung vermeiden, kühle Orte aufsuchen.',
-    '7_5': 'Extreme Hitze: Sehr hohes Gesundheitsrisiko. Aufbesondere Vorsicht für Kinder, Ältere und Kranke.',
-    '1_3': 'Markante Gewittergefahr mit Starkregen, Hagel und Sturmböen. Freie Flächen meiden, Fenster schliessen.',
-    '1_4': 'Grosse Gewittergefahr. Lebensgefahr durch Blitzeinschlag, Sturmböen und Hagel. Im Gebäude bleiben.',
-    '2_3': 'Markante Regenmenge. Überschwemmungen möglich. Bachufer meiden.',
-    '2_4': 'Starkregen: Hochwassergefahr. Tiefgaragen und Unterführungen meiden.',
-    '3_3': 'Markanter Schneefall. Schneeketten empfohlen. Dächer auf Schneelast prüfen.',
-    '4_3': 'Markante Windböen. Lose Gegenstände sichern. Wälder und Baustellen meiden.',
-    '4_4': 'Sturm mit schweren Böen. Lebensgefahr durch herabfallende Äste und Gegenstände. Drinnen bleiben.',
-    '11_3': 'Erhöhte Hochwassergefahr. Uferbereiche meiden.',
-    '11_4': 'Grosse Hochwassergefahr. Überflutete Strassen meiden.',
-    '12_3': 'Erhöhte Lawinengefahr. Abseits der Pisten nicht unterwegs.',
-    '12_4': 'Grosse Lawinengefahr. Warnungen der lokalen Behörden beachten.',
-  };
-
   return html`
     <div style="margin: 10px 16px;">
       ${alerts.map((alert, idx) => {
         const id = `ms_alert_${idx}`;
-        // LNKtwo fields: warn_level (1-5 int), warn_type_name (string),
-        // warn_type (int), title, description, valid_from, valid_to
-        const level: number = alert.warn_level || alert.level || 3;
-        const color = levelColors[level] || levelColors[3];
-        const warnType: number = alert.warn_type || 0;
-        const icon = typeIcons[warnType] || 'mdi:alert';
-
-        // Determine language from HA
-        const haLang = hass?.selectedLanguage || hass?.language || 'en';
-        const isDe = haLang.startsWith('de');
-        const typeNames = isDe ? typeNameDe : typeNameEn;
-
-        // Use our translation if available, otherwise fall back to API
-        const typeName = typeNames[warnType] || alert.warn_type_name || '';
-        const levelName = isDe
-          ? (levelNameDe[level] || alert.warn_level_name || '')
-          : (alert.warn_level_name || '');
-
-        // Use our detailed description if available, otherwise API description
-        const descKey = `${warnType}_${level}`;
-        const customDesc = isDe ? (descriptionsDe[descKey] || '') : '';
-        const apiDesc = alert.description || '';
-        const showDesc = customDesc || apiDesc;
-
+        const { typeName, levelName, icon, level } = warningPresentation(alert, attrs, hass);
+        const color = level !== null ? levelColors[level] : '#9e9e9e';
+        // Keep the event-specific provider text. A severity level alone cannot
+        // establish a local prohibition or justify substituting generic advice.
+        const description = typeof alert.description === 'string' ? alert.description : '';
         const isOpen = !!openWarnings[id];
-        const validFrom = alert.valid_from || alert.start;
-        const validTo = (alert.valid_to && alert.valid_to !== 'None') ? alert.valid_to : (alert.end || null);
+        const validFrom = warningDate(alert.valid_from ?? alert.start, hass);
+        const validTo = warningDate(alert.valid_to === 'None' ? alert.end : (alert.valid_to ?? alert.end), hass);
         return html`
           <div style="
             display: flex; align-items: flex-start; gap: 10px;
@@ -495,20 +435,23 @@ function renderMeteoSwissWarnings(
             <div style="flex:1;min-width:0;">
               <div style="font-weight:600;font-size:14px;color:${color};">${typeName}</div>
               <div style="font-size:12px;opacity:0.8;margin-top:2px;">${levelName}</div>
-              ${(validFrom || (validTo && validTo !== 'None')) ? html`
+              ${validFrom || validTo ? html`
                 <div style="font-size:11px;opacity:0.65;margin-top:3px;">
-                  ${validFrom ? 'von ' + new Date(validFrom).toLocaleDateString('de-CH', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}
-                  ${(validTo && validTo !== 'None') ? ' bis ' + new Date(validTo).toLocaleDateString('de-CH', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}
+                  ${validFrom ? html`${_t('warning.valid_from')}: ${validFrom}` : ''}
+                  ${validTo ? html` ${_t('warning.valid_to')}: ${validTo}` : ''}
                 </div>` : ''}
-              ${showDesc && isOpen ? html`
-                <div style="font-size:12px;margin-top:8px;line-height:1.5;opacity:0.85;white-space:pre-wrap;border-top:1px solid ${color}33;padding-top:6px;">${customDesc || showDesc}</div>
+              ${description && isOpen ? html`
+                <div style="font-size:12px;margin-top:8px;line-height:1.5;opacity:0.85;white-space:pre-wrap;border-top:1px solid ${color}33;padding-top:6px;">${description}</div>
               ` : ''}
-              ${!isOpen && customDesc ? html`
-                <div style="font-size:11px;margin-top:4px;opacity:0.6;">${customDesc.substring(0, 80)}...</div>
+              ${!isOpen && description ? html`
+                <div style="font-size:11px;margin-top:4px;opacity:0.6;">${description.substring(0, 80)}${description.length > 80 ? '…' : ''}</div>
               ` : ''}
             </div>
-            ${showDesc ? html`
+            ${description ? html`
               <button @click=${() => toggle(id)}
+                title="${isOpen ? _t('collapse') : _t('expand')}"
+                aria-label="${isOpen ? _t('collapse') : _t('expand')}"
+                aria-expanded="${isOpen}"
                 style="background:none;border:none;cursor:pointer;color:inherit;flex-shrink:0;padding:4px;">
                 <ha-icon icon="${isOpen ? 'mdi:chevron-up' : 'mdi:chevron-down'}"></ha-icon>
               </button>` : ''}

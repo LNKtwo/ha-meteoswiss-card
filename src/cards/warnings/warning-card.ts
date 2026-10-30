@@ -10,7 +10,7 @@ import {
   type WarningCardConfig,
 } from './const';
 import { registerCustomCard } from '../../utils';
-import { renderWarningSection } from '../../utils/warning-renderer';
+import { renderWarningSection, renderWarningsUnavailable } from '../../utils/warning-renderer';
 
 registerTranslateConfig({ loader: lang => translations[lang] });
 
@@ -123,11 +123,10 @@ export class WarningCard extends LitElement {
       ? this._getEntityState(this.config.warning_entity)
       : null;
 
-    // Ranked model: show empty state when primary has no active warning
-    if (primaryEntity && primaryEntity.attributes?.has_warning !== undefined) {
-      if (!(primaryEntity.attributes as any).has_warning) {
-        return html`<div class="no-warnings">${_t('warning.warnings_none')}</div>`;
-      }
+    // A configured but missing entity is not an all-clear.
+    if ((this.config.primary_warning_entity && !primaryEntity)
+      || (!this.config.primary_warning_entity && this.config.warning_entity && !legacyEntity)) {
+      return renderWarningsUnavailable();
     }
 
     const content = renderWarningSection(
