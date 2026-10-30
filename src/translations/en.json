@@ -82,6 +82,7 @@
     "weather_warnings": "{{count}} weather warnings active",
     "warnings": "Weather warnings",
     "warnings_none": "No active weather warnings",
+    "warnings_unavailable": "Weather warning data unavailable",
     "warnings_additional": "+{{count}} more",
     "valid_from": "Valid from",
     "valid_to": "Valid to"

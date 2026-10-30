@@ -1,0 +1,37 @@
+name: HACS
+
+on:
+  push:
+    branches: ['main', 'fix/**', 'chore/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hacs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: HACS frontend validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate the exact commit with the official HACS tool
+        env:
+          INPUT_GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          docker run --rm --cap-drop ALL \
+            --security-opt no-new-privileges --read-only \
+            --workdir /tmp --tmpfs /tmp:rw,nosuid,size=1g \
+            --env PYTHONDONTWRITEBYTECODE=1 --env HOME=/tmp \
+            --env INPUT_CATEGORY=plugin --env INPUT_COMMENT=false \
+            --env INPUT_GITHUB_TOKEN --env REPOSITORY_REF \
+            --env GITHUB_REPOSITORY --env GITHUB_ACTOR \
+            --env GITHUB_WORKSPACE=/tmp \
+            --env GITHUB_EVENT_PATH=/github/event.json \
+            --volume "$GITHUB_EVENT_PATH:/github/event.json:ro" \
+            ghcr.io/hacs/action@sha256:7b279b1c83529d05c4ce9d4cf7c04ac875191a6759e8cbf3439384f7e9c98351

@@ -1,5 +1,5 @@
 import { translations } from '../../translations';
-import { formatDateToWeekDay, showHoursChartLabel } from '../../charts/index';
+import { showHoursChartLabel } from '../../charts/index';
 import { LitElement, html, css, PropertyValues, TemplateResult } from 'lit';
 import { use, translate as _t, registerTranslateConfig } from 'lit-translate';
 import { customElement, property, state } from 'lit/decorators.js';
@@ -12,8 +12,7 @@ import type {
 } from '../../types/home-assistant';
 import { getWeatherIcon } from '../../icons';
 import { type CardConfig, FULL_CARD_EDITOR_NAME, FULL_CARD_NAME, schema } from './const';
-import { isDay } from '../../utils';
-import { renderWarningSection } from '../../utils/warning-renderer';
+import { renderWarningSection, renderWarningsUnavailable } from '../../utils/warning-renderer';
 import {
   resolveMeteoSwissEntities,
   getNumber,
@@ -514,6 +513,8 @@ export class MeteoSwissCard extends LitElement {
       ? this._getEntityState(this.config.tertiary_warning_entity)
       : null;
     const warningEntityState = warningEntity ? this._getEntityState(warningEntity) : null;
+    const warningSourceMissing = (this.config.primary_warning_entity && !primaryWarningEntity)
+      || (!this.config.primary_warning_entity && warningEntity && !warningEntityState);
 
     return html`
       ${showLocation ? html`
@@ -531,7 +532,8 @@ export class MeteoSwissCard extends LitElement {
       ` : ''}
 
       ${this.config.show_warnings !== false
-        ? renderWarningSection(warningEntityState, primaryWarningEntity, secondaryWarningEntity, tertiaryWarningEntity, this._openWarnings, this._toggleWarning, this.hass)
+        ? warningSourceMissing ? renderWarningsUnavailable()
+          : renderWarningSection(warningEntityState, primaryWarningEntity, secondaryWarningEntity, tertiaryWarningEntity, this._openWarnings, this._toggleWarning, this.hass)
         : ''}
 
       ${this._renderMetricsSection(windSpeed, windDir, humidity, pressure, sunshineEntity)}

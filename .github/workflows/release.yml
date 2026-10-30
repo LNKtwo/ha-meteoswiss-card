@@ -4,37 +4,105 @@ on:
   push:
     tags:
       - 'v*'
+  pull_request:
+    paths:
+      - '.github/workflows/release.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/check-release-tag.mjs'
+      - 'tests/release-tag.test.mjs'
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
+    name: Build and test release asset
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      bundle-sha256: ${{ steps.checksum.outputs.sha256 }}
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
+          cache: npm
+      - name: Require the package version's tag
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        run: node scripts/check-release-tag.mjs
+      - name: Install the locked dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Check dependency consistency
+        run: npm ls --all
+      - name: Lint
+        run: npm run lint -- --max-warnings 0
       - name: Type check
         run: npm run type-check
-
+      - name: Validate repository metadata
+        run: node scripts/check-repository.mjs
       - name: Build
         run: npm run build
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Check committed production assets
+        run: git diff --exit-code -- meteoswiss-weather-card.js meteoswiss-weather-card.js.map
+      - name: Run regression tests and coverage gate
+        run: npm run test:coverage
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+      - name: Record the tested asset's checksum
+        id: checksum
+        run: |
+          printf 'sha256=%s\n' "$(sha256sum dist/meteoswiss-weather-card.js | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - name: Upload the tested asset
+        id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: meteoswiss-weather-card
           path: dist/meteoswiss-weather-card.js
+          if-no-files-found: error
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+  verify-artifact:
+    name: Verify release artifact handoff
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          files: dist/meteoswiss-weather-card.js
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: artifact
+          digest-mismatch: error
+      - name: Require the exact tested JavaScript file
+        env:
+          EXPECTED_SHA256: ${{ needs.build.outputs.bundle-sha256 }}
+        run: printf '%s  %s\n' "$EXPECTED_SHA256" 'artifact/meteoswiss-weather-card.js' | sha256sum --check --strict
+
+  publish:
+    name: Publish GitHub release
+    needs: [build, verify-artifact]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: artifact
+          digest-mismatch: error
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: artifact/meteoswiss-weather-card.js
+          fail_on_unmatched_files: true
           generate_release_notes: true
